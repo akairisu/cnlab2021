@@ -77,7 +77,7 @@ int main(int argc, char *argv[]){
     tv.tv_sec = 0;
     tv.tv_usec = 1000;
     if(setsockopt(icmpfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
-    	perror("setsockopt error\n");
+    	perror("setsockopt timeout error\n");
     	exit(1);
     }
     // TODO
@@ -91,16 +91,29 @@ int main(int argc, char *argv[]){
     printf("traceroute to %s (%s), %d hops max\n", dest, ip, maxHop);
     for(int h = 1; h < maxHop; h++){
         // Set TTL
+        if(setsockopt(icmpfd, SOL_IP, IP_TTL, &h, sizeof(h)) < 0){
+        	perror("setsockopt TTL error\n");
+        	exit(1);
+        }
         // TODO
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
+            struct icmphdr header;
+            memset(&header, 0, sizeof(struct icmphdr));
+            header.type = ICMP_ECHO;
+            header.code = 0;
+            header.checksum = 0;
+            header.un.echo.id = 0;
+            header.un.echo.sequence = 0;
             // TODO
 
             // Checksum
+            checksum(&header);
             // TODO
             
             // Send the icmp packet to destination
+            int ret = sendto();
             // TODO
         
             // Recive ICMP reply, need to check the identifier and sequence number
