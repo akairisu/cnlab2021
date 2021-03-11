@@ -32,9 +32,6 @@
 	}
 	return DNSServer;
 }*/
-void checksum(struct icmp* header){
-	return;
-}
 
 char *DNSLookup(char *host){
 	char *IP_buf;
@@ -53,8 +50,30 @@ char *DNSLookup(char *host){
 	
 	IP_buf = inet_ntoa(*((struct in_addr*)host_entry->h_addr_list[0]));
 	
-	fprintf(stderr, "ip: %s\n", IP_buf);
+	//fprintf(stderr, "ip: %s\n", IP_buf);
 	return IP_buf;
+}
+unsigned short checksum(struct icmp *header)
+{
+	unsigned short *addr = (unsigned short *)header;
+	int count = sizeof(struct icmp);
+	unsigned long sum = 0;
+	unsigned short cksum;
+
+	while (count > 1) {
+		sum += *addr;
+		addr++;
+		count -= 2;
+	}
+	if (count > 0) {
+		sum += *(unsigned char *)addr;
+	}
+	while (sum >> 16) {
+		sum = (sum & 0xffff) + (sum >> 16);
+	}
+	cksum = (unsigned short)sum;
+	cksum = ~cksum;
+	return cksum;
 }
 
 int main(int argc, char *argv[]){
@@ -100,6 +119,9 @@ int main(int argc, char *argv[]){
         	exit(1);
         }
         // TODO
+		char hostname[4][128];
+        char srcIP[4][32];
+        float interval[4] = {};
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
@@ -112,7 +134,7 @@ int main(int argc, char *argv[]){
             // TODO
 
             // Checksum
-            checksum(&sendICMP);
+            sendICMP.icmp_cksum = checksum(&sendICMP);
             // TODO
             
             // Send the icmp packet to destination
@@ -120,7 +142,7 @@ int main(int argc, char *argv[]){
            	if(gettimeofday(&begin, NULL) < 0){
            		perror("gettimeofday error\n");
            	}
-           	fprintf(stderr, "begin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
+           //	fprintf(stderr, "begin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
             if(ret <= 0){
             	perror("sento error\n");
             	exit(1);
@@ -134,16 +156,14 @@ int main(int argc, char *argv[]){
             u_int8_t icmpType;
             unsigned int recvLength = sizeof(recvAddr);
             char recvBuf[1500];
-            char hostname[4][128];
-            char srcIP[4][32];
-            float interval[4] = {};
+            
             memset(&recvAddr, 0, sizeof(struct sockaddr_in));
             // TODO
 			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
 			if(gettimeofday(&end, NULL) < 0){
 				perror("gettimeofday error\n");
 			}
-			fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
+			//fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
 			if(ret < 0){
 				perror("recvfrom error\n");
 				exit(1);
@@ -157,10 +177,12 @@ int main(int argc, char *argv[]){
             if(icmpType == 0){
                 finish = 1;
             }
-			fprintf(stderr, "icmp type : %d\n", icmpType);
+			interval[c] = ( (double)end.tv_sec + (double)((double)end.tv_usec / 1000000) ) - ( (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000) );
+			interval[c] *= 1000;
             // Print the result
             // TODO
         }    
+		fprintf(stderr, "%2d %s (%s)  %.3f ms  %.3f ms  %.3f ms\n", h, hostname[0], srcIP[0], interval[0], interval[1], interval[2]);
         if(finish){
             break;
         }
