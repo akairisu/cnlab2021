@@ -32,6 +32,9 @@
 	}
 	return DNSServer;
 }*/
+void checksum(struct icmp* header){
+	return;
+}
 
 char *DNSLookup(char *host){
 	char *IP_buf;
@@ -71,11 +74,12 @@ int main(int argc, char *argv[]){
     sendAddr.sin_port = htons (7);
     sendAddr.sin_family = AF_INET;
     inet_pton(AF_INET, ip, &(sendAddr.sin_addr));
+    socklen_t sendLength = sizeof(sendAddr);
     
     // Set timeout
     struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 1000;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
     if(setsockopt(icmpfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
     	perror("setsockopt timeout error\n");
     	exit(1);
@@ -99,21 +103,28 @@ int main(int argc, char *argv[]){
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
-            struct icmphdr header;
-            memset(&header, 0, sizeof(struct icmphdr));
-            header.type = ICMP_ECHO;
-            header.code = 0;
-            header.checksum = 0;
-            header.un.echo.id = 0;
-            header.un.echo.sequence = 0;
+            memset(&sendICMP, 0, sizeof(struct icmp));
+            sendICMP.icmp_type = ICMP_ECHO;
+            sendICMP.icmp_code = 0;
+            sendICMP.icmp_cksum = 0;
+            sendICMP.icmp_hun.ih_idseq.icd_id = h;
+            sendICMP.icmp_hun.ih_idseq.icd_seq = c;
             // TODO
 
             // Checksum
-            checksum(&header);
+            checksum(&sendICMP);
             // TODO
             
             // Send the icmp packet to destination
-            int ret = sendto();
+            int ret = sendto(icmpfd, (char*)&sendICMP, sizeof(sendICMP), 0, (struct sockaddr*)&sendAddr, sendLength);
+           	if(gettimeofday(&begin, NULL) < 0){
+           		perror("gettimeofday error\n");
+           	}
+           	fprintf(stderr, "begin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
+            if(ret <= 0){
+            	perror("sento error\n");
+            	exit(1);
+            }
             // TODO
         
             // Recive ICMP reply, need to check the identifier and sequence number
@@ -128,14 +139,25 @@ int main(int argc, char *argv[]){
             float interval[4] = {};
             memset(&recvAddr, 0, sizeof(struct sockaddr_in));
             // TODO
-
+			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
+			if(gettimeofday(&end, NULL) < 0){
+				perror("gettimeofday error\n");
+			}
+			fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
+			if(ret < 0){
+				perror("recvfrom error\n");
+				exit(1);
+			}
+			recvIP = (struct ip*)recvBuf;
+			recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
             // Get source hostname and ip address 
             getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
             strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
+            icmpType = recvICMP->icmp_type;
             if(icmpType == 0){
                 finish = 1;
             }
-
+			fprintf(stderr, "icmp type : %d\n", icmpType);
             // Print the result
             // TODO
         }    
