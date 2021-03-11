@@ -97,7 +97,7 @@ int main(int argc, char *argv[]){
     
     // Set timeout
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 1;
     tv.tv_usec = 0;
     if(setsockopt(icmpfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
     	perror("setsockopt timeout error\n");
@@ -122,6 +122,7 @@ int main(int argc, char *argv[]){
 		char hostname[4][128];
         char srcIP[4][32];
         float interval[4] = {};
+		int recvCount = 0;
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
@@ -129,8 +130,8 @@ int main(int argc, char *argv[]){
             sendICMP.icmp_type = ICMP_ECHO;
             sendICMP.icmp_code = 0;
             sendICMP.icmp_cksum = 0;
-            sendICMP.icmp_hun.ih_idseq.icd_id = h;
-            sendICMP.icmp_hun.ih_idseq.icd_seq = c;
+            sendICMP.icmp_hun.ih_idseq.icd_id = htons(h);
+            sendICMP.icmp_hun.ih_idseq.icd_seq = htons(c);
             // TODO
 
             // Checksum
@@ -160,30 +161,59 @@ int main(int argc, char *argv[]){
             memset(&recvAddr, 0, sizeof(struct sockaddr_in));
             // TODO
 			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
+			/*while ( ( ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength) ) > 0) {
+				recvIP = (struct ip*)recvBuf;
+				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
+				if(recvICMP->icmp_hun.ih_idseq.icd_id == h && recvICMP->icmp_hun.ih_idseq.icd_seq == c) {
+					break;
+				}
+			}*/
 			if(gettimeofday(&end, NULL) < 0){
 				perror("gettimeofday error\n");
 			}
 			//fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
 			if(ret < 0){
-				perror("recvfrom error\n");
-				exit(1);
+				interval[c] = -1;
+				//perror("recvfrom error\n");
+				fprintf(stderr, " *");
+				//exit(1);
+			} else {
+				recvCount++;
+				recvIP = (struct ip*)recvBuf;
+				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
+		        // Get source hostname and ip address 
+		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
+		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
+		        icmpType = recvICMP->icmp_type;
+		        if(icmpType == 0){
+		            finish = 1;
+		        }
+				interval[c] = ( (double)end.tv_sec + (double)((double)end.tv_usec / 1000000) ) - ( (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000) );
+				interval[c] *= 1000;
+		        // Print the result
+		        // TODO
+				if (c == 0) {
+					fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
+				}
+				fprintf(stderr, "  %.3f ms", interval[c]);
 			}
-			recvIP = (struct ip*)recvBuf;
-			recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
-            // Get source hostname and ip address 
-            getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
-            strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
-            icmpType = recvICMP->icmp_type;
-            if(icmpType == 0){
-                finish = 1;
-            }
-			interval[c] = ( (double)end.tv_sec + (double)((double)end.tv_usec / 1000000) ) - ( (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000) );
-			interval[c] *= 1000;
-            // Print the result
-            // TODO
         }    
-		fprintf(stderr, "%2d %s (%s)  %.3f ms  %.3f ms  %.3f ms\n", h, hostname[0], srcIP[0], interval[0], interval[1], interval[2]);
-        if(finish){
+		fprintf(stderr, "\n");
+		/*if (recvCount > 0) {
+			//fprintf(stderr, "%2d %s (%s)  %.3f ms  %.3f ms  %.3f ms\n", h, hostname[0], srcIP[0], interval[0], interval[1], interval[2]);
+			fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
+			for (int i = 0; i < 3; i++) {
+				if (interval[i] >= 0) {
+					fprintf(stderr, "  %.3f ms", interval[i]);
+				} else {
+					fprintf(stderr, " *");
+				}
+			}
+			fprintf(stderr, "\n");					
+		} else {
+			fprintf(stderr, "%2d  * * *\n", h);
+		}*/
+		if(finish){
             break;
         }
     }
