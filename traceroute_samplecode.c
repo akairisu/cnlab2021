@@ -12,6 +12,11 @@
 #include<netdb.h>
 #include<sys/time.h>
 
+#define ICMP 0
+#define UDP 1
+#define TCP 2
+#define MAXHOP 64
+
 /*char *SearchDNSServer(){
 	FILE *fp = fopen("/etc/resolv.conf", "r");
 	char *DNSServer, line[100], *start;
@@ -75,15 +80,44 @@ unsigned short checksum(struct icmp *header)
 	cksum = ~cksum;
 	return cksum;
 }
+int check_protocal(char *method) {
+	if (method[1] == 'u' || method[1] == 'U')
+		return UDP;
+	if (method[1] == 't' || method[1] == 'T')
+		return TCP;
+	return ICMP;
+}
+
+void traceroute_icmp(const char *ip);
 
 int main(int argc, char *argv[]){
-    char *dest = argv[1];
+	char *method = argv[1];
+	int protocal = check_protocal(method);
+
+    char *dest = argv[2];
     char *ip = DNSLookup(dest);
     if(ip == NULL){
         printf("traceroute: unknown host %s\n", dest);
         exit(1);
     }
-    int icmpfd;
+	printf("traceroute to %s (%s), %d hops max\n", dest, ip, MAXHOP);
+   	switch(protocal) {
+		case ICMP:
+			traceroute_icmp(ip);
+			break;
+		case UDP:
+			break;
+		case TCP:
+			break;
+
+	}
+    return 0;
+}
+
+
+
+void traceroute_icmp(const char *ip) {
+	int icmpfd;
     if((icmpfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0){
         printf("Can not open socket with error number %d\n", errno);
         exit(1);
@@ -106,12 +140,11 @@ int main(int argc, char *argv[]){
     // TODO
 
     int finish = 0; // if the packet reaches the destination
-    int maxHop = 64; // maximum hops
+	int maxHop = MAXHOP; // maximum hops
     struct icmp sendICMP; 
     struct timeval begin, end; // used to record RTT
     int seq = 0; // increasing sequence number for icmp packet
     int count = 3; // sending count for each ttl
-    printf("traceroute to %s (%s), %d hops max\n", dest, ip, maxHop);
     for(int h = 1; h < maxHop; h++){
         // Set TTL
         if(setsockopt(icmpfd, SOL_IP, IP_TTL, &h, sizeof(h)) < 0){
@@ -123,6 +156,7 @@ int main(int argc, char *argv[]){
         char srcIP[4][32];
         float interval[4] = {};
 		int recvCount = 0;
+		fprintf(stderr, "%2d ", h);
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
@@ -130,8 +164,10 @@ int main(int argc, char *argv[]){
             sendICMP.icmp_type = ICMP_ECHO;
             sendICMP.icmp_code = 0;
             sendICMP.icmp_cksum = 0;
-            sendICMP.icmp_hun.ih_idseq.icd_id = htons(h);
-            sendICMP.icmp_hun.ih_idseq.icd_seq = htons(c);
+            //sendICMP.icmp_hun.ih_idseq.icd_id = htons(h);
+			seq++;
+            sendICMP.icmp_hun.ih_idseq.icd_seq = htons(seq);
+			//fprintf(stderr, "\nsend id = %d, seq = %d\n", sendICMP.icmp_hun.ih_idseq.icd_id, sendICMP.icmp_hun.ih_idseq.icd_seq);
             // TODO
 
             // Checksum
@@ -151,8 +187,8 @@ int main(int argc, char *argv[]){
             // TODO
         
             // Recive ICMP reply, need to check the identifier and sequence number
-            struct ip *recvIP;
-            struct icmp *recvICMP;
+            struct ip *recvIP, *sentIP;
+            struct icmp *recvICMP, *sentICMP;
             struct sockaddr_in recvAddr;
             u_int8_t icmpType;
             unsigned int recvLength = sizeof(recvAddr);
@@ -160,31 +196,35 @@ int main(int argc, char *argv[]){
             
             memset(&recvAddr, 0, sizeof(struct sockaddr_in));
             // TODO
-			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
-			/*while ( ( ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength) ) > 0) {
+
+			while ((ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength)) > 0) {
 				recvIP = (struct ip*)recvBuf;
 				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
-				if(recvICMP->icmp_hun.ih_idseq.icd_id == h && recvICMP->icmp_hun.ih_idseq.icd_seq == c) {
+				sentIP = (struct ip*)(recvBuf + (recvIP->ip_hl) * 4 + 8);
+				sentICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4 + 8 + sentIP->ip_hl * 4);
+				icmpType = recvICMP->icmp_type;
+				unsigned short recvseq = ntohs(*((short*) ( ((char*)sentICMP)+6 )));
+				if (recvseq == seq || ntohs(recvICMP->icmp_hun.ih_idseq.icd_seq) == seq)
 					break;
-				}
-			}*/
+			}
+			
 			if(gettimeofday(&end, NULL) < 0){
 				perror("gettimeofday error\n");
 			}
 			//fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
-			if(ret < 0){
+			if(ret <= 0){
 				interval[c] = -1;
 				//perror("recvfrom error\n");
 				fprintf(stderr, " *");
 				//exit(1);
 			} else {
 				recvCount++;
-				recvIP = (struct ip*)recvBuf;
-				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
+				
+				//fprintf(stderr, "recv ip hl = %d\nsentip hl = %d\n", recvIP->ip_hl, sentIP->ip_hl);
 		        // Get source hostname and ip address 
 		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
 		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
-		        icmpType = recvICMP->icmp_type;
+		        
 		        if(icmpType == 0){
 		            finish = 1;
 		        }
@@ -192,14 +232,19 @@ int main(int argc, char *argv[]){
 				interval[c] *= 1000;
 		        // Print the result
 		        // TODO
-				if (c == 0) {
-					fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
+				if (recvCount == 1) {
+					fprintf(stderr, "%s (%s)",hostname[0], srcIP[0]);
 				}
 				fprintf(stderr, "  %.3f ms", interval[c]);
+				//fprintf(stderr, "\nh = %d c = %d\n", h, c);
+				
+				//char type = *(((char*)sentICMP));
+				//fprintf(stderr, "\nid = %d seq = %d type = %d\n", ntohs(id), ntohs(seq), sentICMP->icmp_type);
 			}
         }    
 		fprintf(stderr, "\n");
 		/*if (recvCount > 0) {
+
 			//fprintf(stderr, "%2d %s (%s)  %.3f ms  %.3f ms  %.3f ms\n", h, hostname[0], srcIP[0], interval[0], interval[1], interval[2]);
 			fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
 			for (int i = 0; i < 3; i++) {
@@ -218,5 +263,4 @@ int main(int argc, char *argv[]){
         }
     }
     close(icmpfd);
-    return 0;
 }
