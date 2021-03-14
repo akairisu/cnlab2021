@@ -12,7 +12,7 @@
 #include<netdb.h>
 #include<sys/time.h>
 
-void udp_trace(char *ip)
+void udp_trace(char *ip,char *dest)
 {
 	int sendfd, recvfd;
 	if((sendfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
@@ -25,9 +25,11 @@ void udp_trace(char *ip)
     }
     
     struct sockaddr_in localAddr;
-    localAddr.sin_port = htons (7);
+	bzero(&localAddr,sizeof(localAddr));
+    localAddr.sin_port = htons (4097);
     localAddr.sin_family = AF_INET;
-    inet_pton(AF_INET, ip, &(localAddr.sin_addr));
+	localAddr.sin_addr.s_addr = INADDR_ANY;//inet_addr("127.0.0.1");
+//    inet_pton(AF_INET, "127.0.0.1", &(localAddr.sin_addr));
     
     if (bind(sendfd, (struct sockaddr *)&localAddr, sizeof(localAddr)) != 0) {
         perror("bind error");
@@ -35,12 +37,13 @@ void udp_trace(char *ip)
     }
     
     struct sockaddr_in sendAddr;
+	bzero(&sendAddr,sizeof(sendAddr));
     sendAddr.sin_family = AF_INET;
     sendAddr.sin_addr.s_addr = inet_addr(ip);
     
     //set timeout
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 1;
     tv.tv_usec = 0;
     if(setsockopt(recvfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
     	perror("setsockopt timeout error\n");
@@ -52,7 +55,7 @@ void udp_trace(char *ip)
     struct timeval begin, end; // used to record RTT
     int seq = 0; // increasing sequence number for icmp packet
     int count = 3; // sending count for each ttl
-    char sendBuff[1500];
+    char sendBuf[500];
     printf("traceroute to %s (%s), %d hops max\n", dest, ip, maxHop);
     for(int h = 1; h < maxHop; h++){
         // Set TTL
@@ -64,19 +67,22 @@ void udp_trace(char *ip)
 		char hostname[4][128];
         char srcIP[4][32];
         float interval[4] = {};
+		int recvCount = 0;
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
-            sendAddr.sin_port = hton(33434 + seq);
+            sendAddr.sin_port = htons(23434 + seq);
             seq++;
-            if(sendto(sendfd, sendBuff, sizeof(sendBuff), (struct sockaddr *) &sendAddr, sizeof(sendAddr)) <= 0){
+			//int r;
+            if( sendto(sendfd, sendBuf, 500*sizeof(char), 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
+			//	printf("r=%d\n",r);
             	perror("sendto error\n");
             	exit(1);
             }
            	if(gettimeofday(&begin, NULL) < 0){
            		perror("gettimeofday error\n");
            	}
-           	fprintf(stderr, "begin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
+        //   	fprintf(stderr, "\nbegin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
             // TODO
         
             // Recive ICMP reply, need to check the identifier and sequence number
@@ -89,11 +95,11 @@ void udp_trace(char *ip)
             
             memset(&recvAddr, 0, sizeof(struct sockaddr_in));
             // TODO
-			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
+			int ret = recvfrom(recvfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
 			if(gettimeofday(&end, NULL) < 0){
 				perror("gettimeofday error\n");
 			}
-			fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
+		//	fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
 			if(ret < 0){
 				interval[c] = -1;
 				//perror("recvfrom error\n");
@@ -114,7 +120,7 @@ void udp_trace(char *ip)
 				interval[c] *= 1000;
 		        // Print the result
 		        // TODO
-				if (c == 0) {
+				if (recvCount == 1) {
 					fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
 				}
 				fprintf(stderr, "  %.3f ms", interval[c]);
@@ -191,6 +197,10 @@ int main(int argc, char *argv[]){
         printf("traceroute: unknown host %s\n", dest);
         exit(1);
     }
+
+	udp_trace(ip,dest);
+	return 0;
+	
     int icmpfd;
     if((icmpfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0){
         printf("Can not open socket with error number %d\n", errno);
