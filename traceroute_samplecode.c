@@ -12,26 +12,134 @@
 #include<netdb.h>
 #include<sys/time.h>
 
-/*char *SearchDNSServer(){
-	FILE *fp = fopen("/etc/resolv.conf", "r");
-	char *DNSServer, line[100], *start;
-	DNSServer = (char*)malloc(sizeof(char) * 100);
-	while(fgets(line, 100, fp)){
-		if(line[0] == '#'){
-			continue;		
-		}
-		else{
-			if(strncmp(line, "nameserver", 10) == 0){
-				start = strchr(line, ' ');
-				strcpy(DNSServer, start);
+void udp_trace(char *ip)
+{
+	int sendfd, recvfd;
+	if((sendfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+        printf("Can not open socket with error number %d\n", errno);
+        exit(1);
+    }
+	if((recvfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0){
+        printf("Can not open socket with error number %d\n", errno);
+        exit(1);
+    }
+    
+    struct sockaddr_in localAddr;
+    localAddr.sin_port = htons (7);
+    localAddr.sin_family = AF_INET;
+    inet_pton(AF_INET, ip, &(localAddr.sin_addr));
+    
+    if (bind(sendfd, (struct sockaddr *)&localAddr, sizeof(localAddr)) != 0) {
+        perror("bind error");
+        exit(1);
+    }
+    
+    struct sockaddr_in sendAddr;
+    sendAddr.sin_family = AF_INET;
+    sendAddr.sin_addr.s_addr = inet_addr(ip);
+    
+    //set timeout
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    if(setsockopt(recvfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
+    	perror("setsockopt timeout error\n");
+    	exit(1);
+    }
+    
+    int finish = 0; // if the packet reaches the destination
+    int maxHop = 64; // maximum hops
+    struct timeval begin, end; // used to record RTT
+    int seq = 0; // increasing sequence number for icmp packet
+    int count = 3; // sending count for each ttl
+    char sendBuff[1500];
+    printf("traceroute to %s (%s), %d hops max\n", dest, ip, maxHop);
+    for(int h = 1; h < maxHop; h++){
+        // Set TTL
+        if(setsockopt(sendfd, IPPROTO_IP, IP_TTL, &h, sizeof(h)) < 0){
+        	perror("setsockopt TTL error\n");
+        	exit(1);
+        }
+        // TODO
+		char hostname[4][128];
+        char srcIP[4][32];
+        float interval[4] = {};
+
+        for(int c = 0; c < count; c++){
+            // Set ICMP Header
+            sendAddr.sin_port = hton(33434 + seq);
+            seq++;
+            if(sendto(sendfd, sendBuff, sizeof(sendBuff), (struct sockaddr *) &sendAddr, sizeof(sendAddr)) <= 0){
+            	perror("sendto error\n");
+            	exit(1);
+            }
+           	if(gettimeofday(&begin, NULL) < 0){
+           		perror("gettimeofday error\n");
+           	}
+           	fprintf(stderr, "begin : %f\n", (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000));
+            // TODO
+        
+            // Recive ICMP reply, need to check the identifier and sequence number
+            struct ip *recvIP;
+            struct icmp *recvICMP;
+            struct sockaddr_in recvAddr;
+            u_int8_t icmpType;
+            unsigned int recvLength = sizeof(recvAddr);
+            char recvBuf[1500];
+            
+            memset(&recvAddr, 0, sizeof(struct sockaddr_in));
+            // TODO
+			ret = recvfrom(icmpfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength);
+			if(gettimeofday(&end, NULL) < 0){
+				perror("gettimeofday error\n");
 			}
-			else{
-				continue;			
+			fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
+			if(ret < 0){
+				interval[c] = -1;
+				//perror("recvfrom error\n");
+				fprintf(stderr, " *");
+				//exit(1);
+			} else {
+				recvCount++;
+				recvIP = (struct ip*)recvBuf;
+				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
+		        // Get source hostname and ip address 
+		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
+		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
+		        icmpType = recvICMP->icmp_type;
+		        if(icmpType == 3){
+		            finish = 1;
+		        }
+				interval[c] = ( (double)end.tv_sec + (double)((double)end.tv_usec / 1000000) ) - ( (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000) );
+				interval[c] *= 1000;
+		        // Print the result
+		        // TODO
+				if (c == 0) {
+					fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
+				}
+				fprintf(stderr, "  %.3f ms", interval[c]);
 			}
-		}
-	}
-	return DNSServer;
-}*/
+        }    
+		fprintf(stderr, "\n");
+		/*if (recvCount > 0) {
+			//fprintf(stderr, "%2d %s (%s)  %.3f ms  %.3f ms  %.3f ms\n", h, hostname[0], srcIP[0], interval[0], interval[1], interval[2]);
+			fprintf(stderr, "%2d %s (%s)", h, hostname[0], srcIP[0]);
+			for (int i = 0; i < 3; i++) {
+				if (interval[i] >= 0) {
+					fprintf(stderr, "  %.3f ms", interval[i]);
+				} else {
+					fprintf(stderr, " *");
+				}
+			}
+			fprintf(stderr, "\n");					
+		} else {
+			fprintf(stderr, "%2d  * * *\n", h);
+		}*/
+		if(finish){
+            break;
+        }
+    }
+}
 
 char *DNSLookup(char *host){
 	char *IP_buf;
