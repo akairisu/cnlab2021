@@ -377,18 +377,19 @@ void traceroute_udp(const char *ip)
 struct psdhdr{	//pseudoheader for computing tcp checksum
 	unsigned int srcIP;
 	unsigned int destIP;
-	unsigned short zero:8;
-	unsigned short proto:8;
+	unsigned char zero;
+	unsigned char proto;
 	unsigned short len;
 };
 void init_psdhdr(struct psdhdr *phdr, struct ip *iphdr)
 {
 	phdr->srcIP = iphdr->ip_src.s_addr;
-	phdr->destIP = iphdr->ip_dst.s_addr;;
+	phdr->destIP = iphdr->ip_dst.s_addr;
 	phdr->zero = 0;
 	phdr->proto = IPPROTO_TCP;
-	phdr->len = sizeof(struct tcphdr);
+	phdr->len = htons(sizeof(struct tcphdr));
 }
+
 void setsrcIP(struct ip *iphdr)
 {
 	int fd;
@@ -401,8 +402,9 @@ void setsrcIP(struct ip *iphdr)
 	ioctl(fd, SIOCGIFADDR, &ifr);
 
 	close(fd);
-	//inet_pton(AF_INET, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr), &iphdr->ip_src.s_addr);
-	memcpy(&((struct sockaddr_in *)&iphdr->ip_src.s_addr)->sin_addr, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, sizeof(struct in_addr));
+	char srcIP[32] = {};
+	inet_ntop(AF_INET, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, srcIP, sizeof(srcIP));
+	inet_pton(AF_INET, srcIP, &iphdr->ip_src.s_addr);
 }
 void init_iphdr(struct ip *iphdr, const char *destIP)
 {
@@ -417,16 +419,36 @@ void init_iphdr(struct ip *iphdr, const char *destIP)
 	setsrcIP(iphdr);
 	inet_pton(AF_INET, destIP, &iphdr->ip_dst.s_addr);
 }
-void init_tcphdr(struct tcphdr *tcphdr) {
-	tcphdr->source = htons(7414);
+void init_tcphdr(struct tcphdr *tcphdr)
+{
+	tcphdr->source = htons(9431);
 	tcphdr->dest = htons(80);
 
 	tcphdr->doff = sizeof(struct tcphdr) / 4;
 	tcphdr->syn = 1;
-	tcphdr->window = htons(5480);
+	tcphdr->window = htons(4096);
 	tcphdr->check = 0;
-	tcphdr->seq = 0;
+	tcphdr->seq = htonl(123);
 	tcphdr->ack_seq = 0;
+}
+unsigned short calcTCPCheckSum(const char* buf) {
+	size_t size = sizeof(struct tcphdr) + sizeof(struct psdhdr);
+	unsigned int checkSum = 0;
+	for (int i = 0; i < size; i += 2) {
+		unsigned short first = (unsigned short)buf[i] << 8;
+		unsigned short second = (unsigned short)buf[i+1] & 0x00ff;
+		checkSum += first + second;
+	}
+	while (1) {
+		unsigned short c = (checkSum >> 16);
+		if (c > 0) {
+			checkSum = (checkSum << 16) >> 16;
+			checkSum += c;
+		} else {
+			break;
+		}
+	}
+	return ~checkSum;
 }
 void create_syn_packet(char *packet, const char *destIP)
 {
@@ -441,7 +463,10 @@ void create_syn_packet(char *packet, const char *destIP)
 	memcpy(buf, &phdr, sizeof(struct psdhdr));
 	memcpy(buf + sizeof(struct psdhdr), &tcphdr, sizeof(struct tcphdr));
 	
-	tcphdr.check = htons(checksum(buf, sizeof(buf)));
+	for (int i = 0; i < sizeof(buf); i++)
+		fprintf(stderr, "%2x ", buf[i] & 0xff);
+	fprintf(stderr, "\n");
+	tcphdr.check = htons(calcTCPCheckSum(buf));//checksum(buf, sizeof(buf)));
 	
 	memcpy(packet, &iphdr, sizeof(struct ip));
 	memcpy(packet + sizeof(struct ip), &tcphdr, sizeof(struct tcphdr));
@@ -494,7 +519,7 @@ void traceroute_tcp(const char *ip)
         for(int c = 0; c < count; c++){
             seq++;
 			struct ip *iphdr = (struct ip*)packet;
-			iphdr->ip_id = seq;
+			iphdr->ip_id = htonl(12923);
 			iphdr->ip_ttl = h;
             if( sendto(sendfd, packet, packet_len, 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
 			//	printf("r=%d\n",r);
