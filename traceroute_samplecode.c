@@ -519,8 +519,10 @@ void traceroute_tcp(const char *ip)
         for(int c = 0; c < count; c++){
             seq++;
 			struct ip *iphdr = (struct ip*)packet;
-			iphdr->ip_id = htonl(12923);
+			iphdr->ip_id = seq;
 			iphdr->ip_ttl = h;
+			struct tcphdr *tcphdr = (struct tcphdr*)(packet + sizeof(struct ip));
+			//tcphdr->source = htons(9431);
             if( sendto(sendfd, packet, packet_len, 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
 			//	printf("r=%d\n",r);
             	perror("sendto error\n");
@@ -560,7 +562,7 @@ void traceroute_tcp(const char *ip)
 				perror("gettimeofday error\n");
 			}
 			//fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
-			if(ret <= 0){
+			if(ret <= 0 && recvfrom(sendfd, &recvBuf, sizeof(recvBuf), MSG_DONTWAIT, (struct sockaddr*)&recvAddr, &recvLength) <= 0){
 				interval[c] = -1;
 
 				//perror("recvfrom error\n");
