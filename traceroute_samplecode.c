@@ -463,9 +463,6 @@ void create_syn_packet(char *packet, const char *destIP)
 	memcpy(buf, &phdr, sizeof(struct psdhdr));
 	memcpy(buf + sizeof(struct psdhdr), &tcphdr, sizeof(struct tcphdr));
 	
-	for (int i = 0; i < sizeof(buf); i++)
-		fprintf(stderr, "%2x ", buf[i] & 0xff);
-	fprintf(stderr, "\n");
 	tcphdr.check = htons(calcTCPCheckSum(buf));//checksum(buf, sizeof(buf)));
 	
 	memcpy(packet, &iphdr, sizeof(struct ip));
@@ -505,9 +502,9 @@ void traceroute_tcp(const char *ip)
     int seq = 0; // increasing sequence number for icmp packet
     int count = 3; // sending count for each ttl
     char sendBuf[32];
-    int packet_len = sizeof(struct ip) + sizeof(struct tcphdr);
-    char *packet = malloc(packet_len);
-    create_syn_packet(packet, ip);
+	int packet_len = sizeof(struct ip) + sizeof(struct tcphdr);
+	char *packet = malloc(packet_len);
+	create_syn_packet(packet, ip);
     for(int h = 1; h < maxHop; h++){
         // TODO
 		char hostname[4][128];
@@ -521,8 +518,7 @@ void traceroute_tcp(const char *ip)
 			struct ip *iphdr = (struct ip*)packet;
 			iphdr->ip_id = seq;
 			iphdr->ip_ttl = h;
-			struct tcphdr *tcphdr = (struct tcphdr*)(packet + sizeof(struct ip));
-			//tcphdr->source = htons(9431);
+			//struct tcphdr *tcphdr = (struct tcphdr*)(packet + sizeof(struct ip));
             if( sendto(sendfd, packet, packet_len, 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
 			//	printf("r=%d\n",r);
             	perror("sendto error\n");
@@ -588,7 +584,7 @@ void traceroute_tcp(const char *ip)
 				}
 				fprintf(stderr, "  %.3f ms", interval[c]);
 			}
-        }    
+        }
 		fprintf(stderr, "\n");
 		if(finish){
             break;
