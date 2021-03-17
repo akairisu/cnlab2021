@@ -12,11 +12,12 @@
 #include<arpa/inet.h>
 #include<netdb.h>
 #include<sys/time.h>
+#include<net/if.h>
+#include<sys/ioctl.h>
 
 #define ICMP 0
 #define UDP 1
 #define TCP 2
-#define IP 3
 #define MAXHOP 64
 #define BASE_PORT 33434
 
@@ -376,8 +377,8 @@ void traceroute_udp(const char *ip)
 struct psdhdr{	//pseudoheader for computing tcp checksum
 	unsigned int srcIP;
 	unsigned int destIP;
-	unsigned short zero;
-	unsigned short proto;
+	unsigned short zero:8;
+	unsigned short proto:8;
 	unsigned short len;
 };
 void init_psdhdr(struct psdhdr *phdr, struct ip *iphdr)
@@ -388,6 +389,21 @@ void init_psdhdr(struct psdhdr *phdr, struct ip *iphdr)
 	phdr->proto = IPPROTO_TCP;
 	phdr->len = sizeof(struct tcphdr);
 }
+void setsrcIP(struct ip *iphdr)
+{
+	int fd;
+	struct ifreq ifr;
+	
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	ifr.ifr_addr.sa_family = AF_INET;
+	strncpy(ifr.ifr_name , "ens33", IFNAMSIZ-1);
+
+	ioctl(fd, SIOCGIFADDR, &ifr);
+
+	close(fd);
+	//inet_pton(AF_INET, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr), &iphdr->ip_src.s_addr);
+	memcpy(&((struct sockaddr_in *)&iphdr->ip_src.s_addr)->sin_addr, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, sizeof(struct in_addr));
+}
 void init_iphdr(struct ip *iphdr, const char *destIP)
 {
 	iphdr->ip_v = IPVERSION;
@@ -397,11 +413,11 @@ void init_iphdr(struct ip *iphdr, const char *destIP)
 	iphdr->ip_off = 0;
 	iphdr->ip_p = IPPROTO_TCP;
 	iphdr->ip_sum = 0;
-	inet_pton(AF_INET, "10.122.159.137", &iphdr->ip_src.s_addr);
+	
+	setsrcIP(iphdr);
 	inet_pton(AF_INET, destIP, &iphdr->ip_dst.s_addr);
 }
-void init_tcphdr(struct tcphdr *tcphdr)
-{
+void init_tcphdr(struct tcphdr *tcphdr) {
 	tcphdr->source = htons(7414);
 	tcphdr->dest = htons(80);
 
@@ -409,6 +425,7 @@ void init_tcphdr(struct tcphdr *tcphdr)
 	tcphdr->syn = 1;
 	tcphdr->window = htons(5480);
 	tcphdr->check = 0;
+	tcphdr->seq = 0;
 	tcphdr->ack_seq = 0;
 }
 void create_syn_packet(char *packet, const char *destIP)
@@ -426,7 +443,6 @@ void create_syn_packet(char *packet, const char *destIP)
 	
 	tcphdr.check = htons(checksum(buf, sizeof(buf)));
 	
-	int len = sizeof(struct ip) + sizeof(struct tcphdr);
 	memcpy(packet, &iphdr, sizeof(struct ip));
 	memcpy(packet + sizeof(struct ip), &tcphdr, sizeof(struct tcphdr));
 }
@@ -443,26 +459,16 @@ void traceroute_tcp(const char *ip)
         exit(1);
     }
     
-    struct sockaddr_in localAddr;
-	bzero(&localAddr,sizeof(localAddr));
-    localAddr.sin_port = htons (4097);
-    localAddr.sin_family = AF_INET;
-	localAddr.sin_addr.s_addr = INADDR_ANY;
-    
-    if (bind(sendfd, (struct sockaddr *)&localAddr, sizeof(localAddr)) != 0) {
-        perror("bind error");
-        exit(1);
-    }
-    
     struct sockaddr_in sendAddr;
 	bzero(&sendAddr,sizeof(sendAddr));
     sendAddr.sin_family = AF_INET;
     sendAddr.sin_addr.s_addr = inet_addr(ip);
+    sendAddr.sin_port = htons(80);
     
     //set timeout
     struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 100000;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
     if(setsockopt(recvfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){
     	perror("setsockopt timeout error\n");
     	exit(1);
@@ -490,7 +496,6 @@ void traceroute_tcp(const char *ip)
 			struct ip *iphdr = (struct ip*)packet;
 			iphdr->ip_id = seq;
 			iphdr->ip_ttl = h;
-			struct tcphdr *tcphdr = (struct tcphdr*)(packet + sizeof(struct ip));
             if( sendto(sendfd, packet, packet_len, 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
 			//	printf("r=%d\n",r);
             	perror("sendto error\n");
@@ -555,10 +560,6 @@ void traceroute_tcp(const char *ip)
 					fprintf(stderr, "%s (%s)",hostname[0], srcIP[0]);
 				}
 				fprintf(stderr, "  %.3f ms", interval[c]);
-				//fprintf(stderr, "\nh = %d c = %d\n", h, c);
-				
-				//char type = *(((char*)sentICMP));
-				//fprintf(stderr, "\nid = %d seq = %d type = %d\n", ntohs(id), ntohs(seq), sentICMP->icmp_type);
 			}
         }    
 		fprintf(stderr, "\n");
