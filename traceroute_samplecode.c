@@ -467,6 +467,7 @@ void create_syn_packet(char *packet, struct ip *iphdr, int port)
 	memcpy(packet, iphdr, sizeof(struct ip));
 	memcpy(packet + sizeof(struct ip), &tcphdr, sizeof(struct tcphdr));
 }
+
 void traceroute_tcp(const char *ip)
 {
 	int sendfd, recvfd;
@@ -475,7 +476,7 @@ void traceroute_tcp(const char *ip)
         exit(1);
     }
     setsockopt(sendfd, IPPROTO_IP, IP_HDRINCL, "1", sizeof("1"));
-	if((recvfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0){
+	if((recvfd = socket(AF_PACKET, SOCK_RAW, htons(0x0800))) < 0){
         printf("Can not open socket with error number %d\n", errno);
         exit(1);
     }
@@ -534,6 +535,7 @@ void traceroute_tcp(const char *ip)
             struct ip *recvIP, *sentIP;
             struct icmp *recvICMP;
             char *sentUDP;
+            struct tcphdr *recvTCP;
             struct sockaddr_in recvAddr;
             u_int8_t icmpType;
             unsigned int recvLength = sizeof(recvAddr);
@@ -543,23 +545,33 @@ void traceroute_tcp(const char *ip)
             // TODO
             int ret;
 			while ((ret = recvfrom(recvfd, &recvBuf, sizeof(recvBuf), 0, (struct sockaddr*)&recvAddr, &recvLength)) > 0) {
-				recvIP = (struct ip*)recvBuf;
-				recvICMP = (struct icmp*)(recvBuf + (recvIP->ip_hl) * 4);
-				sentIP = (struct ip*)(recvBuf + (recvIP->ip_hl) * 4 + 8);
-
-				icmpType = recvICMP->icmp_type;
-				//fprintf(stderr, "\nicmp type = %d\n", icmpType);
-				unsigned short id = sentIP->ip_id;
-				//printf("id = %d\n", id);
-				if (id == seq)
-					break;
+				//printf("\nret = %d\n", ret);
+				recvIP = (struct ip*)(recvBuf + 14);
+				//printf("proto = %u\n", recvIP->ip_p);
+				if(recvIP->ip_p == 1){
+					recvICMP = (struct icmp*)(recvBuf + 14 + (recvIP->ip_hl) * 4);
+					sentIP = (struct ip*)(recvBuf + 14 + (recvIP->ip_hl) * 4 + 8);
+					icmpType = recvICMP->icmp_type;
+					//fprintf(stderr, "\nicmp type = %d\n", icmpType);
+					unsigned short id = sentIP->ip_id;
+					//printf("id = %d\n", id);
+					if (id == seq)
+						break;
+				}
+				if(recvIP->ip_p == 6){
+					recvTCP = (struct tcphdr*)(recvBuf + 14 + (recvIP->ip_hl) * 4);
+					if(recvTCP->dest == htons(9431 + seq) && recvTCP->syn == 1 && recvTCP->ack == 1){
+						finish = 1;
+						break;
+					}
+				}
 			}
 			
 			if(gettimeofday(&end, NULL) < 0){
 				perror("gettimeofday error\n");
 			}
 			//fprintf(stderr, "end : %lf\n", (double)end.tv_sec + (double)((double)end.tv_usec / 1000000));
-			if(ret <= 0 && recvfrom(sendfd, &recvBuf, sizeof(recvBuf), MSG_DONTWAIT, (struct sockaddr*)&recvAddr, &recvLength) <= 0){
+			if(ret <= 0){// && recvfrom(sendfd, &recvBuf, sizeof(recvBuf), MSG_DONTWAIT, (struct sockaddr*)&recvAddr, &recvLength) <= 0){
 				interval[c] = -1;
 
 				//perror("recvfrom error\n");
@@ -573,9 +585,6 @@ void traceroute_tcp(const char *ip)
 		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0);
 		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
 		        
-		        if(icmpType == 3){
-		            finish = 1;
-		        }
 				interval[c] = ( (double)end.tv_sec + (double)((double)end.tv_usec / 1000000) ) - ( (double)begin.tv_sec + (double)((double)begin.tv_usec / 1000000) );
 				interval[c] *= 1000;
 		        // Print the result
