@@ -450,14 +450,13 @@ unsigned short calcTCPCheckSum(const char* buf) {
 	}
 	return ~checkSum;
 }
-void create_syn_packet(char *packet, const char *destIP)
+void create_syn_packet(char *packet, struct ip *iphdr, int port)
 {
-	struct ip iphdr = {};
-	init_iphdr(&iphdr, destIP);
 	struct tcphdr tcphdr = {};
 	init_tcphdr(&tcphdr);
+	tcphdr.source = htons(port);
 	struct psdhdr phdr = {};
-	init_psdhdr(&phdr, &iphdr);
+	init_psdhdr(&phdr, iphdr);
 	
 	char buf[sizeof(struct psdhdr) + sizeof(struct tcphdr)] = {};
 	memcpy(buf, &phdr, sizeof(struct psdhdr));
@@ -465,7 +464,7 @@ void create_syn_packet(char *packet, const char *destIP)
 	
 	tcphdr.check = htons(calcTCPCheckSum(buf));//checksum(buf, sizeof(buf)));
 	
-	memcpy(packet, &iphdr, sizeof(struct ip));
+	memcpy(packet, iphdr, sizeof(struct ip));
 	memcpy(packet + sizeof(struct ip), &tcphdr, sizeof(struct tcphdr));
 }
 void traceroute_tcp(const char *ip)
@@ -503,8 +502,9 @@ void traceroute_tcp(const char *ip)
     int count = 3; // sending count for each ttl
     char sendBuf[32];
 	int packet_len = sizeof(struct ip) + sizeof(struct tcphdr);
-	char *packet = malloc(packet_len);
-	create_syn_packet(packet, ip);
+	char packet[packet_len];
+	struct ip iphdr = {};
+	init_iphdr(&iphdr, ip);
     for(int h = 1; h < maxHop; h++){
         // TODO
 		char hostname[4][128];
@@ -515,9 +515,10 @@ void traceroute_tcp(const char *ip)
 
         for(int c = 0; c < count; c++){
             seq++;
-			struct ip *iphdr = (struct ip*)packet;
-			iphdr->ip_id = seq;
-			iphdr->ip_ttl = h;
+			iphdr.ip_id = seq;
+			iphdr.ip_ttl = h;
+			create_syn_packet(packet, &iphdr, 9431 + seq);
+			//struct ip *iphdr = (struct ip*)packet;
 			//struct tcphdr *tcphdr = (struct tcphdr*)(packet + sizeof(struct ip));
             if( sendto(sendfd, packet, packet_len, 0, (struct sockaddr *) &sendAddr, sizeof(sendAddr) ) < 0){
 			//	printf("r=%d\n",r);
@@ -569,7 +570,7 @@ void traceroute_tcp(const char *ip)
 				
 				//fprintf(stderr, "recv ip hl = %d\nsentip hl = %d\n", recvIP->ip_hl, sentIP->ip_hl);
 		        // Get source hostname and ip address 
-		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0); 
+		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0);
 		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
 		        
 		        if(icmpType == 3){
@@ -590,5 +591,5 @@ void traceroute_tcp(const char *ip)
             break;
         }
     }
-    free(packet);
+    //free(packet);
 }
