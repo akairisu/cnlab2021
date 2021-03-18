@@ -142,7 +142,7 @@ void traceroute_icmp(const char *ip) {
         char srcIP[4][32];
         float interval[4] = {};
 		int recvCount = 0;
-		fprintf(stderr, "%2d ", h);
+		fprintf(stderr, "%2d  ", h);
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
@@ -292,7 +292,7 @@ void traceroute_udp(const char *ip)
         char srcIP[4][32];
         float interval[4] = {};
 		int recvCount = 0;
-		fprintf(stderr, "%2d ", h);
+		fprintf(stderr, "%2d  ", h);
 
         for(int c = 0; c < count; c++){
             // Set ICMP Header
@@ -512,7 +512,7 @@ void traceroute_tcp(const char *ip)
         char srcIP[4][32];
         float interval[4] = {};
 		int recvCount = 0;
-		fprintf(stderr, "%2d ", h);
+		fprintf(stderr, "%2d  ", h);
 
         for(int c = 0; c < count; c++){
             seq++;
@@ -581,7 +581,9 @@ void traceroute_tcp(const char *ip)
 				recvCount++;
 				
 				//fprintf(stderr, "recv ip hl = %d\nsentip hl = %d\n", recvIP->ip_hl, sentIP->ip_hl);
-		        // Get source hostname and ip address 
+		        // Get source hostname and ip address
+				recvAddr.sin_family = AF_INET;
+				recvAddr.sin_addr = recvIP->ip_src;
 		        getnameinfo((struct sockaddr *)&recvAddr, sizeof(recvAddr), hostname[c], sizeof(hostname[c]), NULL, 0, 0);
 		        strcpy(srcIP[c], inet_ntoa(recvIP->ip_src));
 		        
