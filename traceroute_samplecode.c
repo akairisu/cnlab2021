@@ -397,7 +397,10 @@ void setsrcIP(struct ip *iphdr)
 	
 	fd = socket(AF_INET, SOCK_DGRAM, 0);
 	ifr.ifr_addr.sa_family = AF_INET;
-	strncpy(ifr.ifr_name , "ens33", IFNAMSIZ-1);
+	//vmware
+	//strncpy(ifr.ifr_name , "ens33", IFNAMSIZ-1);
+	//virtualbox
+	strncpy(ifr.ifr_name , "enp0s3", IFNAMSIZ-1);
 
 	ioctl(fd, SIOCGIFADDR, &ifr);
 
