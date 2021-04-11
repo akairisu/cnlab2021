@@ -81,25 +81,36 @@ app.post("/ban", (req, res) => {
 				//spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", "ACCEPT"])
 				spawn("iptables", ["-D", "FORWARD", "-d", dest, "-j", status])
 				//spawn("iptables", ["-D", "FORWARD", "-d", ip, "-j", "ACCEPT"])
+				if(status=== "ACCEPT"){
+					spawn("iptables", ["-I", "FORWARD",  "-d", dest, "-j", "DROP"])
+					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+					spawn("iptables", ["-I", "INPUT", "-d", dest, "-j", "DROP"])
+					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+				}
+				else{
+					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+					spawn("iptables", ["-D", "INPUT", "-d", dest, "-j", "DROP"])
+					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+				}
 			}
 			if(dest === "anywhere"){
 				spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-s", src, "-j", status])
 				//spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", "ACCEPT"])
 				spawn("iptables", ["-D", "FORWARD", "-s", src, "-j", status])
 				//spawn("iptables", ["-D", "FORWARD", "-d", ip, "-j", "ACCEPT"])
+				if(status=== "ACCEPT"){
+					spawn("iptables", ["-I", "FORWARD",  "-s", src, "-j", "DROP"])
+					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+					spawn("iptables", ["-I", "INPUT", "-s", src, "-j", "DROP"])
+					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+				}
+				else{
+					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+					spawn("iptables", ["-D", "INPUT", "-s", src, "-j", "DROP"])
+					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+				}
 			}
-			/*if(status=== "ACCEPT"){
-				spawn("iptables", ["-I", "FORWARD", "-s", data[i]["src"], "-d", data[i]["dest"], "-j", "DROP"])
-				//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-				spawn("iptables", ["-I", "INPUT", "-s", data[i]["src"], "-d", data[i]["dest"], "-j", "DROP"])
-				//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-			}
-			else{
-				spawn("iptables", ["-D", "FORWARD", "-s", data[i]["src"], "-d", data[i]["dest"], "-j", "DROP"])
-				//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-				spawn("iptables", ["-D", "INPUT", "-s", data[i]["src"], "-d", data[i]["dest"], "-j", "DROP"])
-				//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-			}*/
+			
 			console.log(i);
 		}
 	}
