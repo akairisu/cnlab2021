@@ -85,3 +85,6 @@ and also iPads specifically.
         font-weight: bold;
     }
 }
+.myCheckbox {
+	-moz-transform: scale(2);
+}

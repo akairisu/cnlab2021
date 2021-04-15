@@ -1,6 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const {spawn} = require('child_process');
+const {spawnSync} = require('child_process');
 const {exec} = require('child_process');
 let app = express();
 app.use(bodyParser.urlencoded({extended: true}));
@@ -33,10 +34,10 @@ app.post("/login", (req, res) => {
     if(name == "kirito" && password == "starburst") {
         res.send("<h1>Login success </h1>");
         //TODO
-        spawn("iptables", ["-t", "nat", "-I", "PREROUTING", "1", "-s", remote_ip, "-j", "ACCEPT"])
-        spawn("iptables", ["-t", "nat", "-I", "PREROUTING", "1", "-d", remote_ip, "-j", "ACCEPT"])
-        spawn("iptables", ["-I", "FORWARD", "-s", remote_ip, "-j", "ACCEPT"])
-        spawn("iptables", ["-I", "FORWARD", "-d", remote_ip, "-j", "ACCEPT"])
+        spawnSync("iptables", ["-t", "nat", "-I", "PREROUTING", "1", "-s", remote_ip, "-j", "ACCEPT"])
+        spawnSync("iptables", ["-t", "nat", "-I", "PREROUTING", "1", "-d", remote_ip, "-j", "ACCEPT"])
+        spawnSync("iptables", ["-I", "FORWARD", "-s", remote_ip, "-j", "ACCEPT"])
+        spawnSync("iptables", ["-I", "FORWARD", "-d", remote_ip, "-j", "ACCEPT"])
         
     } else {
         res.send("<h1>Error</h1>")

@@ -32,6 +32,7 @@ app.get("/admin", (req, res) => {
 		}
 	}
     res.setHeader("Context-type", "text/html")
+    console.log("length: ", data.length)
     res.send(
     	`
     	<html>
@@ -43,24 +44,25 @@ app.get("/admin", (req, res) => {
 				<table>
 					<thead>
 						<tr>
-							<th>packets</th>
-							<th>bytes</th>
-							<th>source</th>
-							<th>destination</th>
-							<th>status</th>
-							<th>ban?</th>
+							<th>Packets</th>
+							<th>Bytes</th>
+							<th>Source</th>
+							<th>Destination</th>
+							<th>Status</th>
+							<th>Select</th>
 						</tr>
 					</thead>
 					<tbody>
     	`
-    	+ data.map((d, index) =>
-    	`<tr><td>${d.pkts}</td><td>${d.bytes}</td><td>${d.src}</td><td>${d.dest}</td><td>${d.status}</td><td><input type="checkbox" name="name_${index}" form="myform" /></td></tr>`).join('')
+    	+ data.map((d, index) => {
+    		if(index % 2 === 0){
+    			return `<tr><td>${d.pkts}</td><td>${d.bytes}</td><td>${d.src}</td><td>${d.dest}</td><td rowspan="2">${d.status}</td><td rowspan="2"><input class="myCheckbox" type="checkbox" name="name_${index/2}" form="myform" /></td></tr><tr><td>${data[index+1].pkts}</td><td>${data[index+1].bytes}</td><td>${data[index+1].src}</td><td>${data[index+1].dest}</td></tr>`;
+    		}
+    	}).join('')
     	 + `
 			 		</tbody>
 			 	</table>
-                which IP do you want to ban: <input type="text" name="banip" form="myform"/>
-                </br>
-                <button>GO!</button>
+                <center><button>GO!</button></center>
              </form>
 			 </body>
     	 </html>`
@@ -69,49 +71,35 @@ app.get("/admin", (req, res) => {
 
 app.post("/ban", (req, res) => {
 	let c = req.body["name_1"];
-	console.log(c);
-	for(let i = 0; i < data.length; i++){
+	for(let i = 0; i < data.length / 2; i++){
 		if(req.body["name_" + i.toString()] === "on"){
-			let src = data[i]["src"]
-			let dest = data[i]["dest"]
-			let status = data[i]["status"]
-			if(src === "anywhere"){
-				spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", dest, "-j", status])
-				console.log(src, dest)
-				//spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", "ACCEPT"])
-				spawn("iptables", ["-D", "FORWARD", "-d", dest, "-j", status])
-				//spawn("iptables", ["-D", "FORWARD", "-d", ip, "-j", "ACCEPT"])
-				if(status=== "ACCEPT"){
-					spawn("iptables", ["-I", "FORWARD",  "-d", dest, "-j", "DROP"])
-					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-					spawn("iptables", ["-I", "INPUT", "-d", dest, "-j", "DROP"])
-					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-				}
-				else{
-					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-					spawn("iptables", ["-D", "INPUT", "-d", dest, "-j", "DROP"])
-					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-				}
+			let ip = data[i*2]["src"]
+			if(ip === "anywhere"){
+				ip = data[i*2]["dest"]
 			}
-			if(dest === "anywhere"){
-				spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-s", src, "-j", status])
-				//spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", "ACCEPT"])
-				spawn("iptables", ["-D", "FORWARD", "-s", src, "-j", status])
-				//spawn("iptables", ["-D", "FORWARD", "-d", ip, "-j", "ACCEPT"])
-				if(status=== "ACCEPT"){
-					spawn("iptables", ["-I", "FORWARD",  "-s", src, "-j", "DROP"])
-					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-					spawn("iptables", ["-I", "INPUT", "-s", src, "-j", "DROP"])
-					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-				}
-				else{
-					//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
-					spawn("iptables", ["-D", "INPUT", "-s", src, "-j", "DROP"])
-					//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
-				}
+			let status = data[i*2]["status"]
+			spawnSync("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", status])
+			spawnSync("iptables", ["-t", "nat", "-D", "PREROUTING", "-s", ip, "-j", status])
+			console.log(ip)
+			//spawn("iptables", ["-t", "nat", "-D", "PREROUTING", "-d", ip, "-j", "ACCEPT"])
+			spawnSync("iptables", ["-D", "FORWARD", "-d", ip, "-j", status])
+			spawnSync("iptables", ["-D", "FORWARD", "-s", ip, "-j", status])
+			//spawn("iptables", ["-D", "FORWARD", "-d", ip, "-j", "ACCEPT"])
+			if(status=== "ACCEPT"){
+				spawnSync("iptables", ["-I", "FORWARD",  "-d", ip, "-j", "DROP"])
+				spawnSync("iptables", ["-I", "FORWARD",  "-s", ip, "-j", "DROP"])
+				//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+				spawnSync("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+				spawnSync("iptables", ["-I", "INPUT", "-s", ip, "-j", "DROP"])
+				//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
+			}
+			else{
+				//spawn("iptables", ["-I", "FORWARD", "-d", ip, "-j", "DROP"])
+				spawnSync("iptables", ["-D", "INPUT", "-d", ip, "-j", "DROP"])
+				spawnSync("iptables", ["-D", "INPUT", "-s", ip, "-j", "DROP"])
+				//spawn("iptables", ["-I", "INPUT", "-d", ip, "-j", "DROP"])
 			}
 			
-			console.log(i);
 		}
 	}
 	res.redirect("back");

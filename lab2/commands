@@ -1,3 +1,5 @@
+#! /bin/bash
+
 sudo iptables -t filter -A FORWARD -i wlx801f02e9fa58 -j DROP
-sudo iptables -t nat -A PREROUTING -i wlx801f02e9fa58 -p tcp --dport 80 -j DNAT --to (192.168.94.131):9090 # () is interface to Internet
-sudo iptables -t nat -A PREROUTING -i wlx801f02e9fa58 -p tcp --dport 443 -j DNAT --to (192.168.94.131):9090
+sudo iptables -t nat -A PREROUTING -i wlx801f02e9fa58 -p tcp --dport 80 -j DNAT --to 192.168.94.131:9090 # () is interface to Internet
+sudo iptables -t nat -A PREROUTING -i wlx801f02e9fa58 -p tcp --dport 443 -j DNAT --to 192.168.94.131:9090
