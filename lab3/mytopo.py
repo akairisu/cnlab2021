@@ -36,7 +36,7 @@ class DataCenter(Topo):
 		cores = []
 		
 		for i in range(n):
-			core = self.addSwitch('c' + str(i + 1))
+			core = self.addSwitch('s' + str(i + 1 + m * 4))
 			cores.append(core)
 		
 		for i in range(m):
@@ -75,7 +75,7 @@ class Tree(Topo):
 
 		Topo.__init__(self)
 		
-		core = self.addSwitch('c1')
+		core = self.addSwitch('s0')
 		
 		switch1 = self.addSwitch('s1')
 		switch2 = self.addSwitch('s2')
