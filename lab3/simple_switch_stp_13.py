@@ -13,12 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import socket
 import netifaces as ni
+from operator import attrgetter
 from uuid import getnode
 from ryu.base import app_manager
 from ryu.controller import ofp_event
-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
+from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib import dpid as dpid_lib
@@ -28,7 +30,9 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import icmp
 from ryu.lib.packet import arp
+from ryu.lib.packet import *
 from ryu.app import simple_switch_13
+from ryu.lib import hub
 
 
 class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
@@ -52,6 +56,8 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                   dpid_lib.str_to_dpid('0000000000000003'):
                   {'bridge': {'priority': 0xa000}}}
         self.stp.set_config(config)
+        self.datapaths = {}
+        self.monitor_thread = hub.spawn(self._monitor)
 
     def delete_flow(self, datapath):
         ofproto = datapath.ofproto
@@ -82,32 +88,42 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         pkt_ip = pkt.get_protocols(ipv4.ipv4)
         ip_dst = 0
         ip_src = 0
+        port_src = 0
+        port_dst = 0
+        ip_proto = 0
         
         pkt_arp = pkt.get_protocols(arp.arp)
         
         pkt_icmp = pkt.get_protocols(icmp.icmp)
+        pkt_tcp = pkt.get_protocols(tcp.tcp)
+        pkt_udp = pkt.get_protocols(udp.udp)
         
         if pkt_arp:
             ip_dst = pkt_arp[0].dst_ip
             ip_src = pkt_arp[0].src_ip
-            ip_dst = int(ip_dst.split('.')[3])
-            ip_src = int(ip_src.split('.')[3])
-            if ip_src % 2 != ip_dst % 2:
+            ip_dst_last = int(ip_dst.split('.')[3])
+            ip_src_last = int(ip_src.split('.')[3])
+            if ip_src_last % 2 != ip_dst_last % 2:
                 return
         elif pkt_ip:
+            ip_proto = pkt_ip[0].proto
             ip_dst = pkt_ip[0].dst
             ip_src = pkt_ip[0].src
-            ip_dst = int(ip_dst.split('.')[3])
-            ip_src = int(ip_src.split('.')[3])
-            if ip_src % 2 != ip_dst % 2:
+            ip_dst_last = int(ip_dst.split('.')[3])
+            ip_src_last = int(ip_src.split('.')[3])
+            if ip_src_last % 2 != ip_dst_last % 2:
                 if pkt_icmp:
-                    self._handle_icmp(datapath, in_port, pkt_eth, pkt_ip, pkt_icmp)
-                    return
+                    self._handle_icmp(datapath, in_port, pkt_eth, pkt_ip[0], pkt_icmp[0])
                 else:
-                    return
-            
-            
-        self.logger.info("ip_src: %d ip_dst: %d", ip_src, ip_dst)
+                    return #delete(CLEAR ACTIONS)
+        if pkt_tcp:
+            port_src = pkt_tcp[0].src_port
+            port_dst = pkt_tcp[0].dst_port
+        elif pkt_udp:
+            port_src = pkt_udp[0].src_port
+            port_dst = pkt_udp[0].dst_port
+              
+        #self.logger.info("ip_src: %d ip_dst: %d", ip_src, ip_dst)
         
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
@@ -126,8 +142,18 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
 
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto)
+            if pkt_tcp:
+                match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto, tcp_src=port_src, tcp_dst=port_dst)   
+            elif pkt_udp:
+                match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto, udp_src=port_src, udp_dst=port_dst)
+            elif pkt_arp:
+                match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ip_proto=0)
+                
+            
             self.add_flow(datapath, 1, match, actions)
+        if pkt_icmp:
+            return
 
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
@@ -165,3 +191,92 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                     stplib.PORT_STATE_FORWARD: 'FORWARD'}
         self.logger.debug("[dpid=%s][port=%d] state=%s",
                           dpid_str, ev.port_no, of_state[ev.port_state])
+                          
+    @set_ev_cls(ofp_event.EventOFPStateChange,
+                [MAIN_DISPATCHER, DEAD_DISPATCHER])
+    def _state_change_handler(self, ev):
+        datapath = ev.datapath
+        if ev.state == MAIN_DISPATCHER:
+            if datapath.id not in self.datapaths:
+                self.logger.debug('register datapath: %016x', datapath.id)
+                self.datapaths[datapath.id] = datapath
+        elif ev.state == DEAD_DISPATCHER:
+            if datapath.id in self.datapaths:
+                self.logger.debug('unregister datapath: %016x', datapath.id)
+                del self.datapaths[datapath.id]
+
+    def _monitor(self):
+        while True:
+            for dp in self.datapaths.values():
+                self._request_stats(dp)
+            hub.sleep(10)
+#            os.system('clear')
+
+    def _request_stats(self, datapath):
+        self.logger.debug('send stats request: %016x', datapath.id)
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        req = parser.OFPFlowStatsRequest(datapath)
+        datapath.send_msg(req)
+
+        req = parser.OFPPortStatsRequest(datapath, 0, ofproto.OFPP_ANY)
+        datapath.send_msg(req)
+
+    @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
+    def _flow_stats_reply_handler(self, ev):
+        body = ev.msg.body
+        print(vars(ev))
+        self.logger.info('Flow Statistical Information')
+        self.logger.info('datapath         '
+                         'in-port  src_ip           '
+                         'src_port dst_ip           '
+                         'dst_port protocol         '
+                         'action packets  bytes')
+        self.logger.info('---------------- '
+                         '-------- ----------------- '
+                         '-------- -------- --------')
+        for stat in sorted([flow for flow in body if flow.priority == 1],
+                           key=lambda flow: (flow.match['in_port'],
+                                             flow.match['eth_dst'])):
+            if stat.match['ip_proto'] == 6:
+                self.logger.info('%016x %8x %17s %8d %17s %8d %8s %8x %8d %8d',
+                             ev.msg.datapath.id,
+                             stat.match['in_port'], stat.match['ipv4_src'],
+                             stat.match['tcp_src'], stat.match['ipv4_dst'],
+                             stat.match['tcp_dst'], 'TCP',
+                             stat.instructions[0].actions[0].port,#action
+                             stat.packet_count, stat.byte_count)
+            elif stat.match['ip_proto'] == 17:
+                self.logger.info('%016x %8x %17s %8d %17s %8d %8s %8x %8d %8d',
+                             ev.msg.datapath.id,
+                             stat.match['in_port'], stat.match['ipv4_src'],
+                             stat.match['udp_src'], stat.match['ipv4_dst'],
+                             stat.match['udp_dst'], 'UDP',
+                             stat.instructions[0].actions[0].port,#action
+                             stat.packet_count, stat.byte_count)
+            elif stat.match['ip_proto'] == 1:
+                self.logger.info('%016x %8x %17s %8s %17s %8s %8s %8x %8d %8d',
+                             ev.msg.datapath.id,
+                             stat.match['in_port'], stat.match['ipv4_src'],
+                             ' ', stat.match['ipv4_dst'],
+                             ' ', 'ICMP',
+                             stat.instructions[0].actions[0].port,#action
+                             stat.packet_count, stat.byte_count)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
+    def _port_stats_reply_handler(self, ev):
+        body = ev.msg.body
+        self.logger.info('Port Statistical Information')
+        self.logger.info('datapath         port     '
+                         'rx-pkts  rx-bytes rx-error '
+                         'tx-pkts  tx-bytes tx-error')
+        self.logger.info('---------------- -------- '
+                         '-------- -------- -------- '
+                         '-------- -------- --------')
+        for stat in sorted(body, key=attrgetter('port_no')):
+            self.logger.info('%016x %8x %8d %8d %8d %8d %8d %8d',
+                             ev.msg.datapath.id, stat.port_no,
+                             stat.rx_packets, stat.rx_bytes, stat.rx_errors,
+                             stat.tx_packets, stat.tx_bytes, stat.tx_errors)
+
