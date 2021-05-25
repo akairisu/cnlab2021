@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import socket
+import netifaces as ni
+from uuid import getnode
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -22,6 +25,9 @@ from ryu.lib import dpid as dpid_lib
 from ryu.lib import stplib
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import icmp
+from ryu.lib.packet import arp
 from ryu.app import simple_switch_13
 
 
@@ -33,7 +39,10 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.stp = kwargs['stplib']
-
+        self.hw_addr = ':'.join(format(s, '02x') for s in bytes.fromhex(hex(getnode())[2:]))
+        iface = ni.gateways()['default'][ni.AF_INET][1]
+        self.ip_addr = ni.ifaddresses(iface)[ni.AF_INET][0]['addr']
+        
         # Sample of stplib config.
         #  please refer to stplib.Stp.set_config() for details.
         config = {dpid_lib.str_to_dpid('0000000000000001'):
@@ -65,11 +74,41 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         in_port = msg.match['in_port']
 
         pkt = packet.Packet(msg.data)
-        eth = pkt.get_protocols(ethernet.ethernet)[0]
-
-        dst = eth.dst
-        src = eth.src
-
+        
+        pkt_eth = pkt.get_protocols(ethernet.ethernet)[0]       
+        dst = pkt_eth.dst
+        src = pkt_eth.src
+        
+        pkt_ip = pkt.get_protocols(ipv4.ipv4)
+        ip_dst = 0
+        ip_src = 0
+        
+        pkt_arp = pkt.get_protocols(arp.arp)
+        
+        pkt_icmp = pkt.get_protocols(icmp.icmp)
+        
+        if pkt_arp:
+            ip_dst = pkt_arp[0].dst_ip
+            ip_src = pkt_arp[0].src_ip
+            ip_dst = int(ip_dst.split('.')[3])
+            ip_src = int(ip_src.split('.')[3])
+            if ip_src % 2 != ip_dst % 2:
+                return
+        elif pkt_ip:
+            ip_dst = pkt_ip[0].dst
+            ip_src = pkt_ip[0].src
+            ip_dst = int(ip_dst.split('.')[3])
+            ip_src = int(ip_src.split('.')[3])
+            if ip_src % 2 != ip_dst % 2:
+                if pkt_icmp:
+                    self._handle_icmp(datapath, in_port, pkt_eth, pkt_ip, pkt_icmp)
+                    return
+                else:
+                    return
+            
+            
+        self.logger.info("ip_src: %d ip_dst: %d", ip_src, ip_dst)
+        
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
@@ -97,6 +136,13 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
+    
+    def _handle_icmp(self, datapath, port, pkt_ethernet, pkt_ipv4, pkt_icmp):
+        pkt = packet.Packet()
+        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_ethernet.ethertype,dst=pkt_ethernet.src,src=self.hw_addr))
+        pkt.add_protocol(ipv4.ipv4(dst=pkt_ipv4.src,src=self.ip_addr,proto=pkt_ipv4.proto))
+        pkt.add_protocol(icmp.icmp(type_=icmp.ICMP_DEST_UNREACH,code=icmp.ICMP_DEST_UNREACH_CODE,csum=0,data=pkt_icmp.data))
+        self._send_packet(datapath, port, pkt)
 
     @set_ev_cls(stplib.EventTopologyChange, MAIN_DISPATCHER)
     def _topology_change_handler(self, ev):
