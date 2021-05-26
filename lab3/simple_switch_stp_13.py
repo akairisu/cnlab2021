@@ -277,8 +277,8 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                              '-------- ----------------- '
                              '-------- -------- --------')
         for stat in sorted([flow for flow in body if flow.priority == 1],
-                           key=lambda flow: (flow.match['in_port'],
-                                             flow.match['eth_dst'])):
+                           key=lambda flow: (flow.match.get('in_port', 0), 
+                                             flow.match.get('eth_dst', 0))):
             if stat.match['eth_type'] == 0x0806:
                 continue                                
             
