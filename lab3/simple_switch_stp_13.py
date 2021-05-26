@@ -288,17 +288,19 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                 action = 'port ' + hex(stat.instructions[0].actions[0].port)[2:]
                 in_port = stat.match['in_port']
                 if stat.match['ip_proto'] == 6:
-                    num_of_flow[stat.instructions[0].actions[0].port] = num_of_flow[stat.instructions[0].actions[0].port] + 1
                     diff = stat.byte_count - self.flow[(ev.msg.datapath.id, stat.instructions[0].actions[0].port)][(stat.match['ipv4_src'], stat.match['tcp_src'], 
                                                         stat.match['ipv4_dst'],stat.match['tcp_dst'], 'TCP')]
+                    if diff > 0:
+                        num_of_flow[stat.instructions[0].actions[0].port] = num_of_flow[stat.instructions[0].actions[0].port] + 1
                     sum_of_flow[stat.instructions[0].actions[0].port] = sum_of_flow[stat.instructions[0].actions[0].port] + diff
                     if diff > largest_flow[stat.instructions[0].actions[0].port][0]:
                         largest_flow[stat.instructions[0].actions[0].port] = (diff, (stat.match['ipv4_src'], stat.match['tcp_src'], stat.match['ipv4_dst'],stat.match['tcp_dst'], 'TCP'))
                     self.flow[(ev.msg.datapath.id, stat.instructions[0].actions[0].port)][(stat.match['ipv4_src'], stat.match['tcp_src'], stat.match['ipv4_dst'],stat.match['tcp_dst'], 'TCP')] = stat.byte_count
                 elif stat.match['ip_proto'] == 17:
-                    num_of_flow[stat.instructions[0].actions[0].port] = num_of_flow[stat.instructions[0].actions[0].port] + 1
                     diff = stat.byte_count - self.flow[(ev.msg.datapath.id, stat.instructions[0].actions[0].port)][(stat.match['ipv4_src'], stat.match['udp_src'], 
                                                         stat.match['ipv4_dst'],stat.match['udp_dst'], 'UDP')]
+                    if diff > 0:
+                        num_of_flow[stat.instructions[0].actions[0].port] = num_of_flow[stat.instructions[0].actions[0].port] + 1
                     sum_of_flow[stat.instructions[0].actions[0].port] = sum_of_flow[stat.instructions[0].actions[0].port] + diff
                     if diff > largest_flow[stat.instructions[0].actions[0].port][0]:
                         largest_flow[stat.instructions[0].actions[0].port] = (diff, (stat.match['ipv4_src'], stat.match['udp_src'], stat.match['ipv4_dst'],stat.match['udp_dst'], 'UDP'))
