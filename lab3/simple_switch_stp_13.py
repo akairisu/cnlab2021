@@ -167,26 +167,26 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         if out_port != ofproto.OFPP_FLOOD:
             match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto)
             if pkt_tcp:
-                print("tcp")
+                #print("tcp")
                 match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto, tcp_src=port_src, tcp_dst=port_dst)   
             elif pkt_udp:
-                print("udp")
+                #print("udp")
                 match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, ip_proto=ip_proto, udp_src=port_src, udp_dst=port_dst)
             elif pkt_arp:
-                print("arp")
+                #print("arp")
                 match = parser.OFPMatch(eth_type=pkt_eth.ethertype, in_port=in_port, eth_dst=dst, arp_spa=ip_src, arp_tpa=ip_dst)#ip_proto=0)
-            elif pkt_icmp :
-                print("icmp")
+            #elif pkt_icmp :
+                #print("icmp")
                 
             if ip_src_last % 2 != ip_dst_last % 2 and not pkt_arp:
                 self.drop_flow(datapath, 1, match)
-                if not pkt.get_protocols(ipv6.ipv6):
-                    self.logger.info("drop %s %s %s", dpid, ip_src, ip_dst)
+                #if not pkt.get_protocols(ipv6.ipv6):
+                #    self.logger.info("drop %s %s %s", dpid, ip_src, ip_dst)
                 return
             else:
                 self.add_flow(datapath, 1, match, actions)
-                if not pkt.get_protocols(ipv6.ipv6):
-                    self.logger.info("add  %s %s %s", dpid, ip_src, ip_dst)
+                #if not pkt.get_protocols(ipv6.ipv6):
+                #    self.logger.info("add  %s %s %s", dpid, ip_src, ip_dst)
 
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
@@ -269,13 +269,15 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
         if self.count == 10:
             self.logger.info('Flow Statistical Information')
             self.logger.info('datapath         '
-                             'in-port  src_ip           '
-                             'src_port dst_ip           '
-                             'dst_port protocol         '
-                             'action packets  bytes')
+                             'in-port  src_ip            '
+                             'src_port dst_ip            '
+                             'dst_port protocol  '
+                             'action   packets  bytes')
             self.logger.info('---------------- '
                              '-------- ----------------- '
-                             '-------- -------- --------')
+                             '-------- ----------------- '
+                             '-------- --------- '
+                             '-------- -------- ----------')
         for stat in sorted([flow for flow in body if flow.priority == 1],
                            key=lambda flow: (flow.match.get('in_port', 0), 
                                              flow.match.get('eth_dst', 0))):
@@ -308,7 +310,7 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                     
             if self.count == 10:   
                 if stat.match['ip_proto'] == 6:
-                    self.logger.info('%016x %8x %17s %8d %17s %8d %8s %8s %8d %8d',
+                    self.logger.info('%016x %8x %17s %8d %17s %8d %9s %8s %8d %10d',
                                  ev.msg.datapath.id,
                                  in_port, stat.match['ipv4_src'],
                                  stat.match['tcp_src'], stat.match['ipv4_dst'],
@@ -316,7 +318,7 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                                  action, #stat.instructions[0].actions[0].port,#action
                                  stat.packet_count, stat.byte_count)
                 elif stat.match['ip_proto'] == 17:
-                    self.logger.info('%016x %8x %17s %8d %17s %8d %8s %8s %8d %8d',
+                    self.logger.info('%016x %8x %17s %8d %17s %8d %9s %8s %8d %10d',
                                  ev.msg.datapath.id,
                                  in_port, stat.match['ipv4_src'],
                                  stat.match['udp_src'], stat.match['ipv4_dst'],
@@ -324,7 +326,7 @@ class SimpleSwitch13(simple_switch_13.SimpleSwitch13):
                                  action, #stat.instructions[0].actions[0].port,#action
                                  stat.packet_count, stat.byte_count)
                 elif stat.match['ip_proto'] == 1:
-                    self.logger.info('%016x %8x %17s %8s %17s %8s %8s %8s %8d %8d',
+                    self.logger.info('%016x %8x %17s %8s %17s %8s %9s %8s %8d %10d',
                                  ev.msg.datapath.id,
                                  in_port, stat.match['ipv4_src'],
                                  ' ', stat.match['ipv4_dst'],
